@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "description": "智能代码规范化自动生成 MCP 插件 - 需求闭环、Skill插件化、自我学习、观察者迭代",
   "main": "dist/index.js",
+  "bin": {
+    "sca": "dist/bin/cli.js"
+  },
   "type": "module",
   "scripts": {
     "dev": "tsc --watch",
