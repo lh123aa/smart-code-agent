@@ -1,0 +1,64 @@
+// MCP 资源定义
+// 定义 Smart Code Agent 可用的 MCP 资源
+
+/**
+ * MCP 资源类型
+ */
+export interface MCPResource {
+  uri: string;
+  name: string;
+  description: string;
+  mimeType: string;
+}
+
+/**
+ * Smart Code Agent MCP 资源列表
+ */
+export const resources: MCPResource[] = [
+  {
+    uri: 'sca://knowledge',
+    name: 'knowledge-base',
+    description: '本地知识库，包含已学习的知识条目',
+    mimeType: 'application/json',
+  },
+  {
+    uri: 'sca://runs',
+    name: 'run-history',
+    description: '运行历史记录',
+    mimeType: 'application/json',
+  },
+  {
+    uri: 'sca://runs/latest',
+    name: 'latest-run',
+    description: '最近一次运行的详情',
+    mimeType: 'application/json',
+  },
+  {
+    uri: 'sca://workflows',
+    name: 'workflows',
+    description: '所有可用的工作流定义',
+    mimeType: 'application/json',
+  },
+  {
+    uri: 'sca://config',
+    name: 'agent-config',
+    description: 'Smart Code Agent 当前配置',
+    mimeType: 'application/json',
+  },
+];
+
+/**
+ * 获取所有资源定义
+ */
+export function getAllResources(): MCPResource[] {
+  return resources;
+}
+
+/**
+ * 根据 URI 获取资源定义
+ */
+export function getResourceByURI(uri: string): MCPResource | undefined {
+  return resources.find(r => r.uri === uri);
+}
+
+export default resources;
