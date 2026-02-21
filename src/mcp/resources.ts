@@ -45,6 +45,36 @@ export const resources: MCPResource[] = [
     description: 'Smart Code Agent 当前配置',
     mimeType: 'application/json',
   },
+  {
+    uri: 'sca://skills',
+    name: 'skills',
+    description: '所有可用的 Skill 列表及状态',
+    mimeType: 'application/json',
+  },
+  {
+    uri: 'sca://statistics',
+    name: 'statistics',
+    description: '运行统计数据，包含成功率、平均耗时等',
+    mimeType: 'application/json',
+  },
+  {
+    uri: 'sca://feedback',
+    name: 'user-feedback',
+    description: '用户反馈列表',
+    mimeType: 'application/json',
+  },
+  {
+    uri: 'sca://reports',
+    name: 'reports',
+    description: '生成的报告列表',
+    mimeType: 'application/json',
+  },
+  {
+    uri: 'sca://templates',
+    name: 'templates',
+    description: '可用的代码模板',
+    mimeType: 'application/json',
+  },
 ];
 
 /**
@@ -59,6 +89,13 @@ export function getAllResources(): MCPResource[] {
  */
 export function getResourceByURI(uri: string): MCPResource | undefined {
   return resources.find(r => r.uri === uri);
+}
+
+/**
+ * 根据 URI 前缀获取资源列表
+ */
+export function getResourcesByPrefix(prefix: string): MCPResource[] {
+  return resources.filter(r => r.uri.startsWith(prefix));
 }
 
 export default resources;

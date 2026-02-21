@@ -1,6 +1,6 @@
 // 工作流状态管理器 - 断点恢复、状态持久化
 
-import { Storage } from '../storage/index.js';
+import { FileStorage } from '../storage/index.js';
 import { createLogger } from '../utils/logger.js';
 import type { WorkflowExecution } from '../types/index.js';
 
@@ -10,11 +10,11 @@ const logger = createLogger('WorkflowStateManager');
  * 工作流状态管理器
  */
 export class WorkflowStateManager {
-  private storage: Storage;
+  private storage: FileStorage;
   private readonly stateDir = 'workflow-state';
 
-  constructor(storage?: Storage) {
-    this.storage = storage || new Storage();
+  constructor(storage?: FileStorage) {
+    this.storage = storage || new FileStorage();
   }
 
   /**

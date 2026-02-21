@@ -1,7 +1,7 @@
 // Smart Code Agent 插件主类
 
 import { v4 as uuidv4 } from 'uuid';
-import { Storage } from './storage/index.js';
+import { FileStorage } from './storage/index.js';
 import { Logger } from './utils/logger.js';
 import { SkillRegistry } from './skill-engine/registry.js';
 import { SkillExecutor } from './skill-engine/executor.js';
@@ -13,11 +13,51 @@ import { ObserverRecorder } from './observer/recorder.js';
 import { ObserverReporter } from './observer/reporter.js';
 import { UserModificationRecorder } from './observer/user-modifications.js';
 import { LLMBridge } from './mcp/llm-bridge.js';
+
+// 导入所有原子 Skills（实例）
+import askQuestionSkill from './skills/atoms/ask/question.js';
+import askClarifySkill from './skills/atoms/ask/clarify.js';
+import askConfirmSkill from './skills/atoms/ask/confirm.js';
+import readFileSkill from './skills/atoms/io/read-file.js';
+import writeFileSkill from './skills/atoms/io/write-file.js';
+import listDirSkill from './skills/atoms/io/list-dir.js';
+import analyzeDemandSkill from './skills/atoms/analyze/demand.js';
+import generateCodeSkill from './skills/atoms/generate/code.js';
+import generateTestSkill from './skills/atoms/generate/test.js';
+import errorFixSkill from './skills/atoms/generate/error-fix.js';
+import unitTestSkill from './skills/atoms/generate/unit-test.js';
+import integrationTestSkill from './skills/atoms/generate/integration-test.js';
+import acceptanceTestSkill from './skills/atoms/generate/acceptance-test.js';
+import testResultAnalyzerSkill from './skills/atoms/generate/test-result-analyzer.js';
+import lintSkill from './skills/atoms/generate/lint.js';
+import typeCheckSkill from './skills/atoms/generate/type-check.js';
+import formatCodeSkill from './skills/atoms/format/code.js';
+import codeFormatSkill from './skills/atoms/format/code-standardize.js';
+import prettierFormatSkill from './skills/atoms/format/prettier-format.js';
+import fileIOSkill from './skills/atoms/io/file-io.js';
+import observeRecordSkill from './skills/atoms/observe/record.js';
+import observeReportSkill from './skills/atoms/observe/report.js';
+import waitSkill from './skills/atoms/utility/wait.js';
+import retrySkill from './skills/atoms/utility/retry.js';
+import branchSkill from './skills/atoms/utility/branch.js';
+import parallelSkill from './skills/atoms/utility/parallel.js';
+
+// 导入组合 Skills（实例）
+import demandCollectSkill from './skills/workflows/demand-collect.js';
+import demandAnalysisSkill from './skills/workflows/demand-analysis.js';
+import demandConfirmSkill from './skills/workflows/demand-confirm.js';
+import smartAnalysisSkill from './skills/workflows/smart-analysis.js';
+
+// 导入工作流
+import { fullDemandAnalysisWorkflow, demandCollectionWorkflow } from './skill-engine/workflows/demand.js';
+import { fullCodeGenerationWorkflow, testDrivenDevelopmentWorkflow } from './skill-engine/workflows/code-gen.js';
+
 import type { 
   StartParams, 
   RunResult, 
   UserFeedback,
-  SkillInput 
+  SkillInput,
+  Workflow 
 } from './types/index.js';
 
 const logger = new Logger('SmartCodeAgent');
@@ -27,7 +67,7 @@ const logger = new Logger('SmartCodeAgent');
  */
 export class SmartCodeAgent {
   // 核心组件
-  private storage: Storage;
+  private storage: FileStorage;
   private skillRegistry: SkillRegistry;
   private skillExecutor: SkillExecutor;
   private skillComposer: SkillComposer;
@@ -41,12 +81,15 @@ export class SmartCodeAgent {
   private userModificationRecorder: UserModificationRecorder;
   private llmBridge: LLMBridge;
 
+  // 工作流注册表
+  private workflows: Map<string, Workflow> = new Map();
+
   // 状态
   private initialized: boolean = false;
 
   constructor() {
     // 初始化存储
-    this.storage = new Storage();
+    this.storage = new FileStorage();
 
     // 初始化 Skill 引擎
     this.skillRegistry = new SkillRegistry();
@@ -65,6 +108,19 @@ export class SmartCodeAgent {
     this.observerReporter = new ObserverReporter(this.storage);
     this.userModificationRecorder = new UserModificationRecorder(this.storage);
     this.llmBridge = new LLMBridge();
+
+    // 注册工作流
+    this.registerWorkflows();
+  }
+
+  /**
+   * 注册内置工作流
+   */
+  private registerWorkflows(): void {
+    this.workflows.set('full-demand-analysis', fullDemandAnalysisWorkflow);
+    this.workflows.set('demand-collection', demandCollectionWorkflow);
+    this.workflows.set('full-code-generation', fullCodeGenerationWorkflow);
+    this.workflows.set('test-driven-development', testDrivenDevelopmentWorkflow);
   }
 
   /**
@@ -78,11 +134,79 @@ export class SmartCodeAgent {
 
     logger.info('Initializing SmartCodeAgent...');
     
-    // TODO: 加载内置 Skill
-    // await this.loadBuiltinSkills();
+    // 加载内置 Skills
+    await this.loadBuiltinSkills();
 
     this.initialized = true;
     logger.info('SmartCodeAgent initialized successfully');
+  }
+
+  /**
+   * 加载内置 Skills
+   */
+  private async loadBuiltinSkills(): Promise<void> {
+    // 注册原子 Skills（使用导入的实例）
+    const atomicSkills = [
+      // Ask 类
+      askQuestionSkill,
+      askClarifySkill,
+      askConfirmSkill,
+      
+      // IO 类
+      readFileSkill,
+      writeFileSkill,
+      listDirSkill,
+      
+      // Analyze 类
+      analyzeDemandSkill,
+      
+      // Generate 类
+      generateCodeSkill,
+      generateTestSkill,
+      errorFixSkill,
+      unitTestSkill,
+      integrationTestSkill,
+      acceptanceTestSkill,
+      testResultAnalyzerSkill,
+      lintSkill,
+      typeCheckSkill,
+      
+      // Format 类
+      formatCodeSkill,
+      codeFormatSkill,
+      prettierFormatSkill,
+      
+      // IO 类
+      readFileSkill,
+      writeFileSkill,
+      listDirSkill,
+      fileIOSkill,
+      
+      // Observe 类
+      observeRecordSkill,
+      observeReportSkill,
+      
+      // Utility 类
+      waitSkill,
+      retrySkill,
+      branchSkill,
+      parallelSkill,
+    ];
+
+    // 注册组合 Skills（使用导入的实例）
+    const workflowSkills = [
+      demandCollectSkill,
+      demandAnalysisSkill,
+      demandConfirmSkill,
+      smartAnalysisSkill,
+    ];
+
+    // 批量注册
+    [...atomicSkills, ...workflowSkills].forEach(skill => {
+      this.skillRegistry.register(skill);
+    });
+
+    logger.info(`Loaded ${atomicSkills.length + workflowSkills.length} builtin skills`);
   }
 
   /**
@@ -111,7 +235,11 @@ export class SmartCodeAgent {
           taskId: uuidv4(),
           taskName: 'start',
           target: params.initialDemand || '',
-          params: params as unknown as Record<string, unknown>,
+          params: {
+            projectType: params.projectType,
+            initialDemand: params.initialDemand,
+            projectPath: params.projectPath,
+          },
           timeout: 300000,
           maxRetry: 3,
         },
@@ -120,25 +248,41 @@ export class SmartCodeAgent {
       };
 
       // 3. 记录开始
-      await this.observerRecorder.startStage(traceId, 'start', ['start']);
+      await this.observerRecorder.startStage(traceId, 'demand-workflow', ['demand-collect', 'demand-analysis', 'demand-confirm']);
 
-      // 4. TODO: 执行需求分析工作流
-      // const workflow = this.getWorkflow('full-demand-analysis');
-      // const result = await this.workflowExecutor.execute(workflow, input);
+      // 4. 执行需求分析工作流
+      const workflow = this.workflows.get('full-demand-analysis');
+      
+      if (!workflow) {
+        throw new Error('Workflow not found: full-demand-analysis');
+      }
 
-      // 模拟执行
-      await this.simulateExecution(traceId, params);
+      const result = await this.workflowExecutor.execute(workflow, input);
 
       // 5. 记录结束
-      await this.observerRecorder.endStage(traceId, 'start', 'success');
+      const status = result.code === 200 ? 'success' : 'failed';
+      await this.observerRecorder.endStage(traceId, 'demand-workflow', status, result.data);
 
-      // 6. 询问用户反馈
-      await this.promptFeedback(traceId);
+      // 6. 创建摘要报告
+      const records = await this.observerRecorder.getAllRecords(traceId);
+      await this.observerReporter.createSummary(
+        traceId,
+        params.projectType,
+        records,
+        []
+      );
 
+      // 7. 返回结果
       return {
         traceId,
-        status: 'success',
-        output: { traceId, projectType: params.projectType },
+        status: result.code === 200 ? 'success' : 'failed',
+        output: {
+          traceId,
+          projectType: params.projectType,
+          workflowResult: result.data,
+          report: await this.observerReporter.generateReport(traceId),
+        },
+        errors: result.code !== 200 ? [result.message] : undefined,
       };
 
     } catch (error) {
@@ -147,7 +291,7 @@ export class SmartCodeAgent {
         traceId 
       });
 
-      await this.observerRecorder.endStage(traceId, 'start', 'failed', {}, {
+      await this.observerRecorder.endStage(traceId, 'demand-workflow', 'failed', {}, {
         type: 'Error',
         message: error instanceof Error ? error.message : String(error),
       });
@@ -248,38 +392,11 @@ export class SmartCodeAgent {
   }
 
   /**
-   * 模拟执行（TODO: 替换为实际工作流执行）
-   */
-  private async simulateExecution(traceId: string, params: StartParams): Promise<void> {
-    logger.info('Simulating execution...', { traceId });
-    
-    // 模拟不同阶段的执行
-    const stages = ['demand-collection', 'demand-analysis', 'code-generation', 'testing'];
-    
-    for (const stage of stages) {
-      await this.observerRecorder.startStage(traceId, stage, []);
-      await new Promise(resolve => setTimeout(resolve, 100)); // 模拟耗时
-      await this.observerRecorder.endStage(traceId, stage, 'success', {
-        simulated: true,
-      });
-    }
-
-    // 创建摘要
-    const records = await this.observerRecorder.getAllRecords(traceId);
-    await this.observerReporter.createSummary(
-      traceId,
-      `project-${params.projectType}`,
-      records,
-      []
-    );
-  }
-
-  /**
-   * 提示用户反馈
+   * 提示用户反馈（占位符方法）
    */
   private async promptFeedback(traceId: string): Promise<void> {
-    logger.info('Please provide feedback for this run');
-    // TODO: 实现实际的反馈收集机制
+    logger.debug('Feedback prompt called', { traceId });
+    // 用户反馈通过 Observer 模块的 userFeedback skill 收集
   }
 }
 

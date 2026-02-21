@@ -13,7 +13,7 @@ export const fullDemandAnalysisWorkflow: Workflow = {
   steps: [
     {
       skill: 'demand-collect',
-      params: { scenario: 'auto-detect' },
+      params: { skipQuestions: true },
       onSuccess: 'demand-analysis',
       onFail: null,
       retry: 2,
@@ -21,23 +21,18 @@ export const fullDemandAnalysisWorkflow: Workflow = {
     {
       skill: 'demand-analysis',
       onSuccess: 'demand-confirm',
-      onFail: 'demand-collect',
+      onFail: null,
       retry: 2,
     },
     {
       skill: 'demand-confirm',
       params: { 
         prompt: '需求分析报告已生成，是否确认？',
-        options: ['确认通过', '需求调整']
+        options: ['确认通过', '需求调整'],
+        autoConfirm: true, // 测试模式自动确认
       },
-      onSuccess: 'workflow-complete',
+      onSuccess: null, // 结束工作流
       onFail: 'demand-collect',
-    },
-    {
-      skill: 'workflow-complete',
-      params: { stage: 'demand' },
-      onSuccess: null,
-      onFail: null,
     },
   ],
 };

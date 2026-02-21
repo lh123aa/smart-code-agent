@@ -245,7 +245,7 @@ export class WorkflowExecutor {
       task: {
         ...input.task,
         target: workflow.name,
-        params: {},
+        // 保留原有参数
       },
     };
   }
@@ -270,10 +270,22 @@ export class WorkflowExecutor {
    * 合并上下文
    */
   private mergeContext(input: SkillInput, data: Record<string, unknown>): SkillInput {
+    // 特殊处理：将 collectedData 移动到 readOnly context
+    let readOnlyUpdate = {};
+    if (data.collectedData) {
+      readOnlyUpdate = { collectedDemand: data.collectedData };
+    }
+    if (data.report) {
+      readOnlyUpdate = { ...readOnlyUpdate, demandReport: data.report };
+    }
+    
     return {
       ...input,
       context: {
-        ...input.context,
+        readOnly: {
+          ...input.context.readOnly,
+          ...readOnlyUpdate,
+        },
         writable: {
           ...input.context.writable,
           ...data,

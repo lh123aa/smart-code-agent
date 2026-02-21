@@ -1,6 +1,6 @@
 // 观察者记录器 - 阶段数据采集
 
-import { Storage } from '../storage/index.js';
+import { FileStorage } from '../storage/index.js';
 import { createLogger } from '../utils/logger.js';
 import type { StageRecord } from '../types/index.js';
 
@@ -10,11 +10,11 @@ const logger = createLogger('ObserverRecorder');
  * 观察者记录器
  */
 export class ObserverRecorder {
-  private storage: Storage;
+  private storage: FileStorage;
   private readonly baseDir = 'observer/runs';
 
-  constructor(storage?: Storage) {
-    this.storage = storage || new Storage();
+  constructor(storage?: FileStorage) {
+    this.storage = storage || new FileStorage();
   }
 
   /**

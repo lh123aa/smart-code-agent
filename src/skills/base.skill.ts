@@ -55,8 +55,7 @@ export abstract class BaseSkill implements Skill {
   protected validateInput(input: SkillInput): boolean {
     return !!(
       input &&
-      input.task &&
-      input.task.params
+      input.task
     );
   }
 

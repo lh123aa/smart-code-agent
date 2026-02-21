@@ -3,6 +3,7 @@
 import fs from 'fs/promises';
 import path from 'path';
 import { cwd } from 'process';
+import { SQLiteStorage, type SQLiteStorageConfig } from './sqlite-storage.js';
 
 // 使用 process.cwd() 获取当前工作目录，避免 ESM/CommonJS 冲突
 const getBaseDir = (): string => {
@@ -21,9 +22,9 @@ export interface StorageConfig {
 }
 
 /**
- * 基础存储类
+ * 基础文件存储类
  */
-export class Storage {
+export class FileStorage {
   private basePath: string;
 
   constructor(config?: StorageConfig) {
@@ -152,4 +153,7 @@ export class Storage {
   }
 }
 
-export default Storage;
+// 向后兼容别名
+export const Storage = FileStorage;
+
+export type { SQLiteStorageConfig };

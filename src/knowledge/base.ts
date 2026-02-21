@@ -1,7 +1,7 @@
 // 知识库基础实现
 
 import { v4 as uuidv4 } from 'uuid';
-import { Storage } from '../storage/index.js';
+import { FileStorage, type StorageConfig } from '../storage/index.js';
 import { createLogger } from '../utils/logger.js';
 import type { KnowledgeEntry } from '../types/index.js';
 
@@ -11,11 +11,11 @@ const logger = createLogger('KnowledgeBase');
  * 知识库
  */
 export class KnowledgeBase {
-  private storage: Storage;
+  private storage: FileStorage;
   private readonly baseDir = 'observer/knowledge';
 
-  constructor(storage?: Storage) {
-    this.storage = storage || new Storage();
+  constructor(storage?: FileStorage) {
+    this.storage = storage || new FileStorage();
   }
 
   /**

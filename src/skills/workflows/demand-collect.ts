@@ -1,270 +1,352 @@
 // demand-collect.skill - 需求采集组合 Skill
 // 负责收集用户需求：项目类型、基本信息、详细需求
+// 接入问题库，实现场景化的关键问题采集
 
 import { BaseSkill } from '../base.skill.js';
+import { FileStorage } from '../../storage/index.js';
+import { createLogger } from '../../utils/logger.js';
 import type { SkillInput, SkillOutput } from '../../types/index.js';
+
+const logger = createLogger('DemandCollectSkill');
+
+/**
+ * 问题库结构
+ */
+interface QuestionLib {
+  type: string;
+  description: string;
+  questions: Array<{
+    id: string;
+    category: string;
+    question: string;
+    required: boolean;
+    options?: string[];
+    placeholder?: string;
+    followUp?: string[];
+  }>;
+}
+
+/**
+ * 采集的数据结构
+ */
+interface CollectedData {
+  projectType: 'page' | 'api' | 'component' | 'project';
+  name?: string;
+  description?: string;
+  techStack?: string[];
+  features?: string[];
+  requirements?: string;
+  answers: Record<string, unknown>;
+  collectedAt?: string;
+}
 
 /**
  * 需求采集组合 Skill
  * 
  * 采集流程：
- * 1. 确定项目类型（页面/接口/组件/项目）
- * 2. 收集基本信息（名称、描述、技术栈）
- * 3. 收集详细需求
+ * 1. 确定项目类型
+ * 2. 加载对应问题库
+ * 3. 按问题逐个采集
  * 4. 保存需求到上下文
  */
 export class DemandCollectSkill extends BaseSkill {
   readonly meta = {
     name: 'demand-collect',
-    description: '采集用户需求 - 项目类型、基本信息、详细需求',
+    description: '采集用户需求 - 基于问题库的场景化采集',
     category: 'utility' as const,
-    version: '1.0.0',
-    tags: ['demand', 'collect', 'workflow', 'requirements'],
+    version: '2.0.0',
+    tags: ['demand', 'collect', 'workflow', 'requirements', 'question-lib'],
   };
 
-  // 采集阶段
-  private stage: 'project-type' | 'basic-info' | 'detail' | 'complete' = 'project-type';
-  
-  // 采集的数据
-  private collectedData: {
-    projectType?: string;
-    name?: string;
-    description?: string;
-    techStack?: string[];
-    features?: string[];
-    requirements?: string;
-  } = {};
+  private storage: FileStorage;
+  private questionLib: QuestionLib | null = null;
+  private currentQuestionIndex: number = 0;
+  private collectedData: CollectedData = {
+    projectType: 'page',
+    answers: {},
+  };
+
+  constructor() {
+    super();
+    this.storage = new FileStorage();
+  }
 
   protected async execute(input: SkillInput): Promise<SkillOutput> {
     const { params } = input.task;
-    const { autoStart = false } = params as { autoStart?: boolean };
-
-    // 从上下文恢复之前采集的数据
-    const savedData = input.context.readOnly.collectedDemand;
-    if (savedData) {
-      this.collectedData = savedData as typeof this.collectedData;
-      this.stage = (input.context.readOnly.demandCollectStage as typeof this.stage) || 'project-type';
-    }
-
-    // 自动开始模式：直接开始采集
-    if (autoStart) {
-      return this.startCollection(input);
-    }
-
-    // 根据当前阶段决定下一步
-    switch (this.stage) {
-      case 'project-type':
-        return this.askProjectType(input);
-      case 'basic-info':
-        return this.askBasicInfo(input);
-      case 'detail':
-        return this.askDetail(input);
-      case 'complete':
-        return this.complete(input);
-      default:
-        return this.fatalError('未知采集阶段');
-    }
-  }
-
-  /**
-   * 开始采集
-   */
-  private async startCollection(input: SkillInput): Promise<SkillOutput> {
-    this.stage = 'project-type';
-    this.collectedData = {};
-    return this.askProjectType(input);
-  }
-
-  /**
-   * 询问项目类型
-   */
-  private async askProjectType(input: SkillInput): Promise<SkillOutput> {
-    const answer = input.task.params.answer as string | undefined;
-    
-    if (answer) {
-      // 用户已回答，保存并进入下一阶段
-      this.collectedData.projectType = answer;
-      this.stage = 'basic-info';
-      
-      return this.needInput({
-        stage: 'basic-info',
-        collectedData: this.collectedData,
-      }, '请继续提供基本信息');
-    }
-
-    // 需要用户输入项目类型
-    return this.needInput({
-      question: '请选择项目类型：',
-      options: ['页面开发', '接口开发', '组件封装', '项目初始化'],
-      required: true,
-      collectedData: this.collectedData,
-    }, '请选择项目类型');
-  }
-
-  /**
-   * 询问基本信息
-   */
-  private async askBasicInfo(input: SkillInput): Promise<SkillOutput> {
-    const answer = input.task.params.answer as string | undefined;
-    const basicInfo = input.task.params.basicInfo as Record<string, unknown> | undefined;
-
-    if (basicInfo) {
-      // 用户提供了基本信息
-      this.collectedData.name = basicInfo.name as string;
-      this.collectedData.description = basicInfo.description as string;
-      this.collectedData.techStack = basicInfo.techStack as string[];
-      this.stage = 'detail';
-      
-      return this.needInput({
-        stage: 'detail',
-        collectedData: this.collectedData,
-      }, '请描述详细需求');
-    }
-
-    if (answer) {
-      // 用户只回答了一个问题，追问更多信息
-      const parts = answer.split('\n');
-      if (!this.collectedData.name && parts.length > 0) {
-        this.collectedData.name = parts[0].trim();
-      }
-      if (!this.collectedData.description && parts.length > 1) {
-        this.collectedData.description = parts.slice(1).join('\n').trim();
-      }
-    }
-
-    // 需要用户提供基本信息
-    const projectTypeHint = this.getProjectTypeHint();
-    return this.needInput({
-      question: `请提供项目基本信息：\n\n1. 项目名称\n2. 项目描述\n3. 技术栈（${projectTypeHint}）`,
-      required: true,
-      collectedData: this.collectedData,
-    }, '请提供项目基本信息');
-  }
-
-  /**
-   * 询问详细需求
-   */
-  private async askDetail(input: SkillInput): Promise<SkillOutput> {
-    const answer = input.task.params.answer as string | undefined;
-    const detail = input.task.params.detail as Record<string, unknown> | undefined;
-
-    if (detail) {
-      // 用户提供了详细信息
-      this.collectedData.features = detail.features as string[];
-      this.collectedData.requirements = detail.requirements as string;
-      this.stage = 'complete';
-      
-      return this.saveAndComplete(input);
-    }
-
-    if (answer) {
-      // 用户直接回答了详细需求
-      this.collectedData.requirements = answer;
-      this.collectedData.features = this.extractFeatures(answer);
-      this.stage = 'complete';
-      
-      return this.saveAndComplete(input);
-    }
-
-    // 根据项目类型生成不同的问题
-    const detailQuestion = this.getDetailQuestion();
-    
-    return this.needInput({
-      question: detailQuestion,
-      required: true,
-      collectedData: this.collectedData,
-    }, '请描述详细需求');
-  }
-
-  /**
-   * 保存并完成采集
-   */
-  private async saveAndComplete(input: SkillInput): Promise<SkillOutput> {
-    // 保存到上下文
-    const demandData = {
-      ...this.collectedData,
-      collectedAt: new Date().toISOString(),
-      collectStage: this.stage,
+    const { 
+      projectType, 
+      initialDemand,
+      skipQuestions = false 
+    } = params as { 
+      projectType?: 'page' | 'api' | 'component' | 'project';
+      initialDemand?: string;
+      skipQuestions?: boolean;
     };
 
-    // 返回成功结果，包含收集到的数据
+    // 从上下文恢复之前采集的数据
+    const savedData = input.context.readOnly.collectedDemand as CollectedData | undefined;
+    if (savedData) {
+      this.collectedData = { ...savedData };
+      this.currentQuestionIndex = (input.context.readOnly.currentQuestionIndex as number) || 0;
+    }
+
+    // 确定项目类型
+    if (projectType && !this.collectedData.projectType) {
+      this.collectedData.projectType = projectType;
+    }
+
+    // 加载问题库
+    if (!this.questionLib) {
+      this.questionLib = await this.loadQuestionLib(this.collectedData.projectType);
+    }
+
+    // 如果有初始需求，尝试提取信息
+    if (initialDemand && !this.collectedData.description) {
+      this.extractFromInitialDemand(initialDemand);
+    }
+
+    // 跳过问题采集模式
+    if (skipQuestions || initialDemand) {
+      return this.quickCollect(initialDemand);
+    }
+
+    // 检查用户回答
+    const answer = params.answer as string | Record<string, unknown> | undefined;
+    if (answer !== undefined) {
+      return this.processAnswer(answer, input);
+    }
+
+    // 开始或继续提问
+    return this.askNextQuestion(input);
+  }
+
+  /**
+   * 加载问题库
+   */
+  private async loadQuestionLib(type: string): Promise<QuestionLib | null> {
+    try {
+      const libPath = `data/question-lib/${type}.json`;
+      const content = await this.storage.load(libPath);
+      
+      if (content) {
+        logger.info(`Question lib loaded: ${type}`);
+        return content as QuestionLib;
+      }
+    } catch (error) {
+      logger.warn(`Failed to load question lib: ${type}`, { error });
+    }
+    
+    // 返回默认问题库
+    return this.getDefaultQuestionLib(type);
+  }
+
+  /**
+   * 默认问题库
+   */
+  private getDefaultQuestionLib(type: string): QuestionLib {
+    const baseQuestions = [
+      {
+        id: 'name',
+        category: 'basic',
+        question: '项目/功能名称是什么？',
+        required: true,
+        placeholder: '例如：用户管理页面',
+      },
+      {
+        id: 'description',
+        category: 'basic',
+        question: '请简要描述需求背景和目标',
+        required: true,
+        placeholder: '例如：需要一个用户管理页面，支持增删改查',
+      },
+      {
+        id: 'techStack',
+        category: 'tech',
+        question: '使用什么技术栈？',
+        required: false,
+        options: ['React', 'Vue', 'Angular', 'Node.js', 'Python', '其他'],
+      },
+    ];
+
+    return {
+      type,
+      description: `${type} 类型默认问题库`,
+      questions: baseQuestions,
+    };
+  }
+
+  /**
+   * 从初始需求提取信息
+   */
+  private extractFromInitialDemand(demand: string): void {
+    // 提取项目名称（第一行或前20个字符）
+    const lines = demand.split('\n');
+    if (lines.length > 0 && lines[0].trim()) {
+      const firstLine = lines[0].trim();
+      if (!this.collectedData.name && firstLine.length < 50) {
+        this.collectedData.name = firstLine;
+      }
+    }
+
+    // 设置描述
+    if (!this.collectedData.description) {
+      this.collectedData.description = demand;
+    }
+
+    // 提取技术栈关键词
+    const techKeywords = ['react', 'vue', 'angular', 'node', 'typescript', 'javascript', 'python', 'go', 'java'];
+    const lowerDemand = demand.toLowerCase();
+    const foundTech = techKeywords.filter(t => lowerDemand.includes(t));
+    if (foundTech.length > 0) {
+      this.collectedData.techStack = foundTech.map(t => t.charAt(0).toUpperCase() + t.slice(1));
+    }
+
+    // 提取功能点
+    this.collectedData.features = this.extractFeatures(demand);
+
+    logger.debug('Extracted from initial demand', { 
+      name: this.collectedData.name,
+      techStack: this.collectedData.techStack,
+      featuresCount: this.collectedData.features?.length 
+    });
+  }
+
+  /**
+   * 快速采集模式
+   */
+  private async quickCollect(initialDemand?: string): Promise<SkillOutput> {
+    if (initialDemand) {
+      this.collectedData.requirements = initialDemand;
+    }
+
+    this.collectedData.collectedAt = new Date().toISOString();
+
     return this.success({
-      collectedData: demandData,
+      collectedData: this.collectedData,
+      questionLibUsed: this.questionLib?.type,
       nextStage: 'demand-analysis',
-    }, '需求采集完成');
+    }, '需求快速采集完成');
+  }
+
+  /**
+   * 处理用户回答
+   */
+  private async processAnswer(
+    answer: string | Record<string, unknown>,
+    _input: SkillInput
+  ): Promise<SkillOutput> {
+    const question = this.questionLib?.questions[this.currentQuestionIndex];
+    
+    if (!question) {
+      return this.complete();
+    }
+
+    // 保存回答
+    const answerValue = typeof answer === 'string' ? answer : answer[question.id];
+    this.collectedData.answers[question.id] = answerValue;
+
+    // 处理特定字段
+    switch (question.id) {
+      case 'name':
+        this.collectedData.name = answerValue as string;
+        break;
+      case 'description':
+        this.collectedData.description = answerValue as string;
+        break;
+      case 'techStack':
+        this.collectedData.techStack = Array.isArray(answerValue) 
+          ? answerValue as string[] 
+          : [answerValue as string];
+        break;
+      case 'features':
+        this.collectedData.features = Array.isArray(answerValue)
+          ? answerValue as string[]
+          : [answerValue as string];
+        break;
+      case 'requirements':
+        this.collectedData.requirements = answerValue as string;
+        this.collectedData.features = this.extractFeatures(answerValue as string);
+        break;
+    }
+
+    // 移动到下一个问题
+    this.currentQuestionIndex++;
+
+    // 检查是否还有问题
+    const hasMoreQuestions = this.questionLib && 
+      this.currentQuestionIndex < this.questionLib.questions.length;
+
+    if (!hasMoreQuestions) {
+      return this.complete();
+    }
+
+    // 继续下一个问题
+    return this.askNextQuestion(_input);
+  }
+
+  /**
+   * 询问下一个问题
+   */
+  private askNextQuestion(_input: SkillInput): Promise<SkillOutput> {
+    if (!this.questionLib) {
+      return Promise.resolve(this.complete());
+    }
+
+    const question = this.questionLib.questions[this.currentQuestionIndex];
+
+    if (!question) {
+      return Promise.resolve(this.complete());
+    }
+
+    // 构建问题输出
+    const questionData: Record<string, unknown> = {
+      questionId: question.id,
+      question: question.question,
+      category: question.category,
+      required: question.required,
+      placeholder: question.placeholder,
+      currentQuestionIndex: this.currentQuestionIndex,
+      totalQuestions: this.questionLib.questions.length,
+      collectedData: this.collectedData,
+    };
+
+    // 如果有选项
+    if (question.options && question.options.length > 0) {
+      questionData.options = question.options;
+      questionData.type = 'select';
+    } else {
+      questionData.type = 'text';
+    }
+
+    return Promise.resolve(this.needInput(questionData, question.question));
   }
 
   /**
    * 完成采集
    */
-  private async complete(input: SkillInput): Promise<SkillOutput> {
+  private complete(): SkillOutput {
+    this.collectedData.collectedAt = new Date().toISOString();
+
+    // 合并 answers 中的数据到主数据
+    if (this.collectedData.answers.name && !this.collectedData.name) {
+      this.collectedData.name = this.collectedData.answers.name as string;
+    }
+    if (this.collectedData.answers.description && !this.collectedData.description) {
+      this.collectedData.description = this.collectedData.answers.description as string;
+    }
+
+    logger.info('Demand collection completed', {
+      projectType: this.collectedData.projectType,
+      name: this.collectedData.name,
+      answersCount: Object.keys(this.collectedData.answers).length,
+    });
+
     return this.success({
       collectedData: this.collectedData,
-      status: 'collected',
-    }, '需求已采集');
-  }
-
-  /**
-   * 根据项目类型获取提示
-   */
-  private getProjectTypeHint(): string {
-    switch (this.collectedData.projectType) {
-      case '页面开发':
-        return '如 React, Vue, HTML/CSS';
-      case '接口开发':
-        return '如 Node.js, Python, Go';
-      case '组件封装':
-        return '如 React 组件库, Vue 组件';
-      case '项目初始化':
-        return '如 Next.js, NestJS, Express';
-      default:
-        return '如 React, Vue, Node.js';
-    }
-  }
-
-  /**
-   * 获取详细问题
-   */
-  private getDetailQuestion(): string {
-    switch (this.collectedData.projectType) {
-      case '页面开发':
-        return `请详细描述页面需求：
-
-1. 页面功能（必填）
-2. 用户交互要求
-3. 页面设计要求（布局、样式）
-4. 数据展示要求
-5. 其他特殊需求`;
-
-      case '接口开发':
-        return `请详细描述接口需求：
-
-1. 接口功能（必填）
-2. 请求参数
-3. 响应格式
-4. 业务逻辑
-5. 性能要求`;
-
-      case '组件封装':
-        return `请详细描述组件需求：
-
-1. 组件功能（必填）
-2. Props 接口
-3. 事件定义
-4. 样式要求
-5. 使用场景`;
-
-      case '项目初始化':
-        return `请详细描述项目需求：
-
-1. 项目目标（必填）
-2. 项目规模
-3. 团队技术栈
-4. 特殊要求`;
-
-      default:
-        return '请详细描述您的需求：';
-    }
+      questionLibUsed: this.questionLib?.type,
+      questionsAnswered: this.currentQuestionIndex,
+      nextStage: 'demand-analysis',
+    }, '需求采集完成');
   }
 
   /**
@@ -273,16 +355,21 @@ export class DemandCollectSkill extends BaseSkill {
   private extractFeatures(requirementsText: string): string[] {
     const features: string[] = [];
     
-    // 简单的功能点提取：按行分割，提取包含功能描述的行
+    // 按行分割，提取功能描述
     const lines = requirementsText.split('\n');
     for (const line of lines) {
       const trimmed = line.trim();
-      if (trimmed && trimmed.length > 5 && !trimmed.startsWith('#')) {
-        features.push(trimmed);
+      // 跳过空行、标题、太短的行
+      if (trimmed && trimmed.length > 5 && !trimmed.startsWith('#') && !trimmed.startsWith('//')) {
+        // 移除列表标记
+        const cleaned = trimmed.replace(/^[-*•]\s*/, '').replace(/^\d+[.)]\s*/, '');
+        if (cleaned.length > 5) {
+          features.push(cleaned);
+        }
       }
     }
     
-    return features;
+    return features.slice(0, 10); // 最多 10 个功能点
   }
 }
 

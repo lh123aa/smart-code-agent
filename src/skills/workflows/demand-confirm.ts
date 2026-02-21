@@ -18,7 +18,7 @@ export class DemandConfirmSkill extends BaseSkill {
     name: 'demand-confirm',
     description: '展示需求报告并获取用户确认',
     category: 'ask' as const,
-    version: '1.0.0',
+    version: '1.1.0',
     tags: ['demand', 'confirm', 'report', 'workflow'],
   };
 
@@ -29,21 +29,34 @@ export class DemandConfirmSkill extends BaseSkill {
       reportMarkdown,
       prompt = '请确认以下需求分析报告',
       options = ['确认通过', '需要调整'],
+      autoConfirm = false,
     } = params as {
       report?: Record<string, unknown>;
       reportMarkdown?: string;
       prompt?: string;
       options?: string[];
+      autoConfirm?: boolean;
     };
 
     // 从上下文获取报告
     const contextReport = input.context.readOnly.demandReport as Record<string, unknown> | undefined;
     const contextMarkdown = input.context.readOnly.demandReportMarkdown as string | undefined;
+    const analysisData = input.context.writable.analysis as Record<string, unknown> | undefined;
 
-    const finalReport = report || contextReport;
+    const finalReport = report || contextReport || (analysisData?.report as Record<string, unknown> | undefined);
     const finalMarkdown = reportMarkdown || contextMarkdown;
 
-    if (!finalReport && !finalMarkdown) {
+    // 自动确认模式（用于测试或自动化流程）
+    if (autoConfirm) {
+      return this.success({
+        confirmed: true,
+        report: finalReport || {},
+        autoConfirmed: true,
+        nextStage: 'code-generation',
+      }, '需求已自动确认');
+    }
+
+    if (!finalReport && !finalMarkdown && !analysisData) {
       return this.fatalError('未找到需求报告，请先执行需求分析');
     }
 
@@ -59,6 +72,7 @@ export class DemandConfirmSkill extends BaseSkill {
       options,
       report: finalReport,
       reportMarkdown: finalMarkdown,
+      analysis: analysisData,
     }, prompt);
   }
 

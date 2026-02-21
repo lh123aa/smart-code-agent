@@ -100,16 +100,13 @@ export class SkillExecutor {
     }
 
     try {
-      // 超时处理
-      const timeoutPromise = new Promise<SkillOutput>((_, reject) => {
-        setTimeout(() => {
-          reject(new Error('Skill execution timeout'));
-        }, options.timeout);
-      });
+      // 执行 Skill（带超时）
+      const timeoutId = setTimeout(() => {
+        throw new Error('Skill execution timeout');
+      }, options.timeout);
 
-      // 执行 Skill
-      const executionPromise = skill.run(input);
-      const output = await Promise.race([executionPromise, timeoutPromise]);
+      const output = await skill.run(input);
+      clearTimeout(timeoutId);
 
       // 校验输出
       if (!this.validator.validateOutput(output)) {

@@ -33,13 +33,16 @@
     "commander": "^11.1.0",
     "handlebars": "^4.7.8",
     "inquirer": "^9.2.6",
+    "sql.js": "^1.14.0",
     "uuid": "^9.0.1",
     "yaml": "^2.3.4"
   },
   "devDependencies": {
+    "@types/handlebars": "^4.0.40",
     "@types/inquirer": "^9.0.7",
     "@types/jest": "^29.5.11",
     "@types/node": "^20.11.0",
+    "@types/sql.js": "^1.4.9",
     "@types/uuid": "^9.0.7",
     "@typescript-eslint/eslint-plugin": "^7.0.0",
     "@typescript-eslint/parser": "^7.0.0",
