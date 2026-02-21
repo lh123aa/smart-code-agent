@@ -1,0 +1,181 @@
+{
+  "name": "smart-code-agent",
+  "version": "1.0.0",
+  "description": "智能代码规范化自动生成 MCP 插件 - 需求闭环、Skill插件化、自我学习、观察者迭代",
+  "author": "",
+  "license": "MIT",
+  "type": "module",
+  "main": "dist/index.js",
+  "mcp": {
+    "version": "1.0",
+    "capabilities": {
+      "skills": true,
+      "observer": true,
+      "knowledge": true
+    },
+    "tools": [
+      {
+        "name": "sca-start",
+        "description": "启动 Smart Code Agent 开发流程",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "projectType": {
+              "type": "string",
+              "enum": ["page", "api", "component", "project"],
+              "description": "项目类型：页面(page)、接口(api)、组件(component)、项目(project)"
+            },
+            "initialDemand": {
+              "type": "string",
+              "description": "初始需求描述"
+            },
+            "projectPath": {
+              "type": "string",
+              "description": "项目路径（可选）"
+            }
+          },
+          "required": ["projectType"]
+        }
+      },
+      {
+        "name": "sca-resume",
+        "description": "恢复中断的开发流程"
+      },
+      {
+        "name": "sca-report",
+        "description": "查看观察者报告",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "traceId": {
+              "type": "string",
+              "description": "运行ID（可选，不填则查看最新）"
+            }
+          }
+        }
+      },
+      {
+        "name": "sca-feedback",
+        "description": "提交用户反馈",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "traceId": {
+              "type": "string",
+              "description": "运行ID"
+            },
+            "type": {
+              "type": "string",
+              "enum": ["bug", "suggestion", "question"],
+              "description": "反馈类型"
+            },
+            "content": {
+              "type": "string",
+              "description": "反馈内容"
+            },
+            "stage": {
+              "type": "string",
+              "description": "涉及的阶段"
+            }
+          },
+          "required": ["traceId", "type", "content"]
+        }
+      },
+      {
+        "name": "sca-status",
+        "description": "查看当前开发状态"
+      },
+      {
+        "name": "sca-list-skills",
+        "description": "列出所有可用的 Skill"
+      },
+      {
+        "name": "sca-knowledge-search",
+        "description": "搜索知识库",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "query": {
+              "type": "string",
+              "description": "搜索关键词"
+            }
+          },
+          "required": ["query"]
+        }
+      },
+      {
+        "name": "sca-knowledge-add",
+        "description": "添加知识到知识库",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "topic": {
+              "type": "string",
+              "description": "知识主题"
+            },
+            "keywords": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "关键词"
+            },
+            "content": {
+              "type": "string",
+              "description": "知识内容"
+            },
+            "source": {
+              "type": "string",
+              "enum": ["manual", "web", "learned"],
+              "description": "来源"
+            }
+          },
+          "required": ["topic", "keywords", "content"]
+        }
+      }
+    ],
+    "resources": [
+      {
+        "uri": "sca://knowledge",
+        "description": "本地知识库"
+      },
+      {
+        "uri": "sca://observer/{traceId}",
+        "description": "运行记录"
+      },
+      {
+        "uri": "sca://skills",
+        "description": "可用技能列表"
+      }
+    ],
+    "prompts": [
+      {
+        "name": "sca-new-project",
+        "description": "开始一个新项目开发",
+        "arguments": [
+          {
+            "name": "projectType",
+            "description": "项目类型",
+            "required": true
+          },
+          {
+            "name": "demand",
+            "description": "需求描述",
+            "required": true
+          }
+        ]
+      },
+      {
+        "name": "sca-analyze-code",
+        "description": "分析现有代码并提出改进建议",
+        "arguments": [
+          {
+            "name": "filePath",
+            "description": "文件路径",
+            "required": true
+          }
+        ]
+      }
+    ]
+  }
+}

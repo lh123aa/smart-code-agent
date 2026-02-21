@@ -1,0 +1,9 @@
+// TypeScript 引用路径配置
+{
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["src/*"]
+    }
+  }
+}

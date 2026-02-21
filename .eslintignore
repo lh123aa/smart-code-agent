@@ -1,0 +1,9 @@
+# ESLint 忽略文件
+
+node_modules/
+dist/
+build/
+coverage/
+*.js
+*.d.ts
+*.min.js
