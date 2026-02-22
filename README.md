@@ -19,7 +19,8 @@ Smart Code Agent 是一个智能代码生成 MCP (Model Context Protocol) 插件
 - 🧠 **自我学习** - 本地知识库，持续积累开发经验
 - 📊 **观察者模式** - 全程记录运行数据，持续优化
 - 💾 **多种存储** - 支持文件系统存储和 SQLite 数据库
-- 🧪 **完整测试** - 内置测试生成和代码质量检查
+ 🧪 **完整测试** - 内置测试生成和代码质量检查
+ 🔄 **自动升级** - 检测 GitHub 更新，一键自动升级
 
 ### 架构概览
 
@@ -114,6 +115,16 @@ sca start -t page -d "创建一个用户登录页面"
 sca list
 ```
 
+# 检测更新
+sca update --check
+
+# 执行更新
+sca update
+
+# 显示版本
+sca version
+```
+
 ### 3. MCP 集成
 
 参考 `mcp-config.example.json` 配置：
@@ -122,7 +133,7 @@ sca list
 {
   "smart-code-agent": {
     "command": "node",
-    "args": ["/path/to/smart-code-agent/dist/index.js"],
+    "args": ["/path/to/smart-code-agent/dist/mcp/stdio-server.js"],
     "description": "智能代码生成插件"
   }
 }
@@ -140,6 +151,8 @@ sca list
 | `sca-list-workflows` | 列出工作流 | - |
 | `sca-run-workflow` | 执行工作流 | `workflowName`, `params` |
 | `sca-submit-feedback` | 提交反馈 | `type`, `content`, `stage`, `traceId` |
+| `sca-check-update` | 检测更新 | - |
+| `sca-do-update` | 执行更新 | `force` (可选) |
 
 ### MCP 资源
 
@@ -556,19 +569,22 @@ A: 支持 MCP 协议的 IDE 均可使用，如：
 
 ## 更新日志
 
-### v1.0.0 (2026-02-21)
+### v1.0.0 (2026-02-22)
 
-- ✅ 初始版本发布
-- ✅ 需求闭环支持
-- ✅ Skill 插件系统
-- ✅ 知识库模块
-- ✅ 观察者模式
-- ✅ 文件/SQLite 双存储
-- ✅ 错误处理系统
-- ✅ 重试策略
-- ✅ 代码模板库
-- ✅ CLI 工具
-- ✅ 安装/卸载脚本
+ ✅ 初始版本发布
+ ✅ 需求闭环支持
+ ✅ Skill 插件系统
+ ✅ 知识库模块
+ ✅ 观察者模式
+ ✅ 文件/SQLite 双存储
+ ✅ 错误处理系统
+ ✅ 重试策略
+ ✅ 代码模板库
+ ✅ CLI 工具
+ ✅ 安装/卸载脚本
+ ✅ **自动升级功能** - 检测 GitHub 更新，一键自动升级
+ ✅ **MCP stdio 服务器** - 支持 OpenCode/Claude 集成
+
 
 ## 许可证
 
