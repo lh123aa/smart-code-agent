@@ -42,7 +42,7 @@ export class ObserverRecorder {
   async endStage(
     traceId: string,
     stage: string,
-    status: 'success' | 'failed' | 'retry',
+    status: 'success' | 'failed' | 'retry' | 'paused',
     metrics: Record<string, unknown> = {},
     error?: { type: string; message: string; stack?: string }
   ): Promise<StageRecord> {
@@ -106,7 +106,7 @@ export class ObserverRecorder {
   private createRecord(
     traceId: string,
     stage: string,
-    status: 'success' | 'failed' | 'retry',
+    status: 'success' | 'failed' | 'retry' | 'paused',
     metrics: Record<string, unknown>,
     error?: { type: string; message: string; stack?: string }
   ): StageRecord {

@@ -14,7 +14,7 @@ export {
 } from './code-gen.js';
 
 export {
-  fullDevelopmentWorkflow,
-  quickDevelopmentWorkflow,
-  iterativeDevelopmentWorkflow,
+  transparentDevelopmentWorkflow,
+  demandOnlyWorkflow,
+  taskPlanningWorkflow,
 } from './development.js';

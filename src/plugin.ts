@@ -48,8 +48,27 @@ import demandAnalysisSkill from './skills/workflows/demand-analysis.js';
 import demandConfirmSkill from './skills/workflows/demand-confirm.js';
 import smartAnalysisSkill from './skills/workflows/smart-analysis.js';
 
+// 导入新增的组合 Skills
+import demandClarifySkill from './skills/workflows/demand-clarify.js';
+import taskDecomposeSkill from './skills/workflows/task-decompose.js';
+import taskPlanSkill from './skills/workflows/task-plan.js';
+import taskConfirmSkill from './skills/workflows/task-confirm.js';
+
+// 导入测试相关 Skills
+import testOrchestratorSkill from './skills/workflows/test-orchestrator.js';
+import testPlanSkill from './skills/workflows/test-plan.js';
+import testConfirmSkill from './skills/workflows/test-confirm.js';
+import qualityScorerSkill from './skills/workflows/quality-scorer.js';
+import testFixLoopSkill from './skills/workflows/test-fix-loop.js';
+
 // 导入工作流
-import { fullDemandAnalysisWorkflow, demandCollectionWorkflow } from './skill-engine/workflows/demand.js';
+import { 
+  transparentDevelopmentWorkflow, 
+  demandOnlyWorkflow,
+  taskPlanningWorkflow,
+  fullDemandAnalysisWorkflow, 
+  demandCollectionWorkflow 
+} from './skill-engine/workflows/development.js';
 import { fullCodeGenerationWorkflow, testDrivenDevelopmentWorkflow } from './skill-engine/workflows/code-gen.js';
 
 import type { 
@@ -57,7 +76,8 @@ import type {
   RunResult, 
   UserFeedback,
   SkillInput,
-  Workflow 
+  Workflow,
+  ProgressCallbackArgs,
 } from './types/index.js';
 
 const logger = new Logger('SmartCodeAgent');
@@ -87,6 +107,9 @@ export class SmartCodeAgent {
   // 状态
   private initialized: boolean = false;
 
+  // 进度回调
+  private progressCallback?: (args: ProgressCallbackArgs) => void;
+
   constructor() {
     // 初始化存储
     this.storage = new FileStorage();
@@ -96,6 +119,8 @@ export class SmartCodeAgent {
     this.skillExecutor = new SkillExecutor(this.skillRegistry);
     this.skillComposer = new SkillComposer(this.skillRegistry);
     this.workflowStateManager = new WorkflowStateManager(this.storage);
+    
+    // 初始化工作流执行器（延迟设置进度回调）
     this.workflowExecutor = new WorkflowExecutor(
       this.skillRegistry,
       this.skillExecutor,
@@ -114,9 +139,28 @@ export class SmartCodeAgent {
   }
 
   /**
+   * 设置进度回调
+   */
+  setProgressCallback(callback: (args: ProgressCallbackArgs) => void): void {
+    this.progressCallback = callback;
+    // 重新创建工作流执行器，带进度回调
+    this.workflowExecutor = new WorkflowExecutor(
+      this.skillRegistry,
+      this.skillExecutor,
+      { 
+        stateManager: this.workflowStateManager,
+        onProgress: callback,
+      }
+    );
+  }
+
+  /**
    * 注册内置工作流
    */
   private registerWorkflows(): void {
+    this.workflows.set('transparent-development', transparentDevelopmentWorkflow);
+    this.workflows.set('demand-only', demandOnlyWorkflow);
+    this.workflows.set('task-planning', taskPlanningWorkflow);
     this.workflows.set('full-demand-analysis', fullDemandAnalysisWorkflow);
     this.workflows.set('demand-collection', demandCollectionWorkflow);
     this.workflows.set('full-code-generation', fullCodeGenerationWorkflow);
@@ -195,10 +239,24 @@ export class SmartCodeAgent {
 
     // 注册组合 Skills（使用导入的实例）
     const workflowSkills = [
+      // 原有组合 Skills
       demandCollectSkill,
       demandAnalysisSkill,
       demandConfirmSkill,
       smartAnalysisSkill,
+      
+      // 新增组合 Skills
+      demandClarifySkill,
+      taskDecomposeSkill,
+      taskPlanSkill,
+      taskConfirmSkill,
+      
+      // 测试相关 Skills
+      testOrchestratorSkill,
+      testPlanSkill,
+      testConfirmSkill,
+      qualityScorerSkill,
+      testFixLoopSkill,
     ];
 
     // 批量注册
@@ -248,20 +306,23 @@ export class SmartCodeAgent {
       };
 
       // 3. 记录开始
-      await this.observerRecorder.startStage(traceId, 'demand-workflow', ['demand-collect', 'demand-analysis', 'demand-confirm']);
+      await this.observerRecorder.startStage(traceId, 'transparent-workflow', [
+        'demand-clarify', 'demand-collect', 'demand-analysis', 'demand-confirm',
+        'task-decompose', 'task-plan', 'task-confirm', 'code-generation'
+      ]);
 
-      // 4. 执行需求分析工作流
-      const workflow = this.workflows.get('full-demand-analysis');
+      // 4. 执行透明开发工作流
+      const workflow = this.workflows.get('transparent-development');
       
       if (!workflow) {
-        throw new Error('Workflow not found: full-demand-analysis');
+        throw new Error('Workflow not found: transparent-development');
       }
 
       const result = await this.workflowExecutor.execute(workflow, input);
 
       // 5. 记录结束
-      const status = result.code === 200 ? 'success' : 'failed';
-      await this.observerRecorder.endStage(traceId, 'demand-workflow', status, result.data);
+      const status = result.code === 200 ? 'success' : result.code === 300 ? 'paused' : 'failed';
+      await this.observerRecorder.endStage(traceId, 'transparent-workflow', status, result.data);
 
       // 6. 创建摘要报告
       const records = await this.observerRecorder.getAllRecords(traceId);
@@ -275,14 +336,14 @@ export class SmartCodeAgent {
       // 7. 返回结果
       return {
         traceId,
-        status: result.code === 200 ? 'success' : 'failed',
+        status: result.code === 200 ? 'success' : result.code === 300 ? 'partial' : 'failed',
         output: {
           traceId,
           projectType: params.projectType,
           workflowResult: result.data,
           report: await this.observerReporter.generateReport(traceId),
         },
-        errors: result.code !== 200 ? [result.message] : undefined,
+        errors: result.code >= 400 ? [result.message] : undefined,
       };
 
     } catch (error) {
@@ -291,7 +352,7 @@ export class SmartCodeAgent {
         traceId 
       });
 
-      await this.observerRecorder.endStage(traceId, 'demand-workflow', 'failed', {}, {
+      await this.observerRecorder.endStage(traceId, 'transparent-workflow', 'failed', {}, {
         type: 'Error',
         message: error instanceof Error ? error.message : String(error),
       });
@@ -303,6 +364,26 @@ export class SmartCodeAgent {
         errors: [error instanceof Error ? error.message : String(error)],
       };
     }
+  }
+
+  /**
+   * 继续执行（用户输入后）
+   */
+  async continue(traceId: string, userInput: Record<string, unknown>): Promise<RunResult> {
+    if (!this.initialized) {
+      await this.initialize();
+    }
+
+    logger.info('Continuing workflow', { traceId, userInputProvided: !!userInput });
+
+    const result = await this.workflowExecutor.continue(traceId, userInput);
+
+    return {
+      traceId,
+      status: result.code === 200 ? 'success' : 'failed',
+      output: result.data,
+      errors: result.code !== 200 ? [result.message] : undefined,
+    };
   }
 
   /**
@@ -377,6 +458,67 @@ export class SmartCodeAgent {
   setMCPClient(client: unknown): void {
     this.llmBridge.setMCPClient(client as any);
     logger.info('MCP client configured');
+  }
+
+  /**
+   * 获取可用工作流列表
+   */
+  listWorkflows(): Array<{ name: string; description: string }> {
+    return Array.from(this.workflows.entries()).map(([name, workflow]) => ({
+      name,
+      description: workflow.description,
+    }));
+  }
+
+  /**
+   * 执行指定工作流
+   */
+  async runWorkflow(workflowName: string, params: StartParams): Promise<RunResult> {
+    if (!this.initialized) {
+      await this.initialize();
+    }
+
+    const workflow = this.workflows.get(workflowName);
+    if (!workflow) {
+      return {
+        traceId: uuidv4(),
+        status: 'failed',
+        output: {},
+        errors: [`Workflow not found: ${workflowName}`],
+      };
+    }
+
+    const traceId = uuidv4();
+    const input: SkillInput = {
+      config: {},
+      context: {
+        readOnly: {},
+        writable: this.buildInitialContext(params),
+      },
+      task: {
+        taskId: uuidv4(),
+        taskName: workflowName,
+        target: params.initialDemand || '',
+        params: {
+          projectType: params.projectType,
+          initialDemand: params.initialDemand,
+          projectPath: params.projectPath,
+        },
+        timeout: 300000,
+        maxRetry: 3,
+      },
+      snapshotPath: `snapshots/${traceId}`,
+      traceId,
+    };
+
+    const result = await this.workflowExecutor.execute(workflow, input);
+
+    return {
+      traceId,
+      status: result.code === 200 ? 'success' : result.code === 300 ? 'partial' : 'failed',
+      output: result.data,
+      errors: result.code >= 400 ? [result.message] : undefined,
+    };
   }
 
   /**

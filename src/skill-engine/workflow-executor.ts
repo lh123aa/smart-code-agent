@@ -1,13 +1,33 @@
-// 工作流执行器 - 按步骤执行工作流
+// 工作流执行器 - 按步骤执行工作流，支持进度回调
 
 import { createLogger } from '../utils/logger.js';
-import type { SkillInput, SkillOutput, Workflow, WorkflowExecution } from '../types/index.js';
+import type { SkillInput, SkillOutput, Workflow, WorkflowExecution, WorkflowStep } from '../types/index.js';
 import { SkillRegistry } from './registry.js';
 import { SkillExecutor } from './executor.js';
 import { WorkflowParser } from './parser.js';
 import { WorkflowStateManager } from './state.js';
 
 const logger = createLogger('WorkflowExecutor');
+
+/**
+ * 进度回调参数
+ */
+export interface ProgressCallbackArgs {
+  /** 当前步骤名称 */
+  stepName: string;
+  /** 步骤索引 */
+  stepIndex: number;
+  /** 总步骤数 */
+  totalSteps: number;
+  /** 步骤状态 */
+  status: 'started' | 'success' | 'failed' | 'paused';
+  /** 步骤输出 */
+  output?: SkillOutput;
+  /** 执行消息 */
+  message?: string;
+  /** 时间戳 */
+  timestamp: number;
+}
 
 /**
  * 工作流执行器选项
@@ -21,6 +41,8 @@ export interface WorkflowExecutorOptions {
   autoSaveState?: boolean;
   /** 状态管理器 */
   stateManager?: WorkflowStateManager;
+  /** 进度回调 */
+  onProgress?: (args: ProgressCallbackArgs) => void;
 }
 
 /**
@@ -40,7 +62,7 @@ export class WorkflowExecutor {
   private executor: SkillExecutor;
   private parser: WorkflowParser;
   private stateManager: WorkflowStateManager;
-  private options: WorkflowExecutorOptions;
+  private options: WorkflowExecutorOptions & { onProgress?: (args: ProgressCallbackArgs) => void };
 
   constructor(
     registry: SkillRegistry,
@@ -85,6 +107,8 @@ export class WorkflowExecutor {
 
       // 执行步骤
       let currentStepName: string | null = workflow.initialStep;
+      let stepIndex = 0;
+      const totalSteps = workflow.steps.length;
 
       while (currentStepName) {
         const step = workflow.steps.find(s => s.skill === currentStepName);
@@ -93,6 +117,17 @@ export class WorkflowExecutor {
         }
 
         execution.currentStep = currentStepName;
+
+        // 触发进度回调 - 步骤开始
+        this.notifyProgress({
+          stepName: currentStepName,
+          stepIndex,
+          totalSteps,
+          status: 'started',
+          message: `开始执行: ${currentStepName}`,
+          timestamp: Date.now(),
+        });
+
         logger.debug(`Executing workflow step: ${currentStepName}`);
 
         try {
@@ -117,10 +152,33 @@ export class WorkflowExecutor {
             if (result.data) {
               currentInput = this.mergeContext(currentInput, result.data);
             }
+
+            // 触发进度回调 - 步骤成功
+            this.notifyProgress({
+              stepName: currentStepName || 'completed',
+              stepIndex,
+              totalSteps,
+              status: 'success',
+              output: result,
+              message: result.message,
+              timestamp: Date.now(),
+            });
+
           } else if (result.code === 300) {
             // 需要用户交互，暂停
             execution.status = 'paused';
             await this.saveState(execution);
+            
+            // 触发进度回调 - 步骤暂停
+            this.notifyProgress({
+              stepName: currentStepName,
+              stepIndex,
+              totalSteps,
+              status: 'paused',
+              output: result,
+              message: `等待用户输入: ${result.message}`,
+              timestamp: Date.now(),
+            });
             
             logger.info(`Workflow paused at step: ${currentStepName}`, { traceId: input.traceId });
             
@@ -129,6 +187,9 @@ export class WorkflowExecutor {
               data: {
                 execution,
                 result,
+                waitForInput: true,
+                currentStep: currentStepName,
+                inputPrompt: result.data,
               },
               message: `Workflow paused at step "${currentStepName}": ${result.message}`,
             };
@@ -137,6 +198,17 @@ export class WorkflowExecutor {
             logger.warn(`Step "${currentStepName}" failed with retryable error`, {
               message: result.message,
               traceId: input.traceId,
+            });
+
+            // 触发进度回调 - 步骤失败
+            this.notifyProgress({
+              stepName: currentStepName,
+              stepIndex,
+              totalSteps,
+              status: 'failed',
+              output: result,
+              message: result.message,
+              timestamp: Date.now(),
             });
             
             currentStepName = step.onFail ?? null;
@@ -150,10 +222,22 @@ export class WorkflowExecutor {
             await this.saveState(execution);
           }
 
+          stepIndex++;
+
         } catch (error) {
           logger.error(`Workflow step "${currentStepName}" threw exception`, {
             error: error instanceof Error ? error.message : String(error),
             traceId: input.traceId,
+          });
+
+          // 触发进度回调 - 步骤失败
+          this.notifyProgress({
+            stepName: currentStepName || 'unknown',
+            stepIndex,
+            totalSteps,
+            status: 'failed',
+            message: error instanceof Error ? error.message : String(error),
+            timestamp: Date.now(),
           });
 
           // 尝试失败分支
@@ -206,6 +290,48 @@ export class WorkflowExecutor {
   }
 
   /**
+   * 继续执行（提供用户输入后）
+   */
+  async continue(
+    traceId: string,
+    userInput: Record<string, unknown>
+  ): Promise<SkillOutput> {
+    const execution = await this.stateManager.load(traceId);
+    if (!execution) {
+      return {
+        code: 500,
+        data: {},
+        message: `No saved execution found for traceId: ${traceId}`,
+      };
+    }
+
+    if (execution.status !== 'paused') {
+      return {
+        code: 400,
+        data: {},
+        message: `Cannot continue execution with status: ${execution.status}`,
+      };
+    }
+
+    // 将用户输入添加到上下文
+    execution.context.userInput = userInput;
+    execution.status = 'running';
+
+    logger.info(`Continuing workflow: ${execution.workflowName}`, { traceId });
+
+    // 返回需要重新执行的信息
+    return {
+      code: 200,
+      data: {
+        execution,
+        userInput,
+        message: 'Ready to continue with user input',
+      },
+      message: 'Workflow ready to continue',
+    };
+  }
+
+  /**
    * 从保存的状态恢复执行
    */
   async resume(traceId: string, _additionalInput?: Partial<SkillInput>): Promise<SkillOutput> {
@@ -226,7 +352,6 @@ export class WorkflowExecutor {
       };
     }
 
-    // 重新执行（简化版本，实际需要更复杂的恢复逻辑）
     logger.info(`Resuming workflow: ${execution.workflowName}`, { traceId });
 
     return {
@@ -234,6 +359,21 @@ export class WorkflowExecutor {
       data: { execution },
       message: 'Workflow resumed',
     };
+  }
+
+  /**
+   * 触发进度回调
+   */
+  private notifyProgress(args: ProgressCallbackArgs): void {
+    if (this.options.onProgress) {
+      try {
+        this.options.onProgress(args);
+      } catch (error) {
+        logger.warn('Progress callback error', {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
   }
 
   /**
@@ -270,13 +410,39 @@ export class WorkflowExecutor {
    * 合并上下文
    */
   private mergeContext(input: SkillInput, data: Record<string, unknown>): SkillInput {
-    // 特殊处理：将 collectedData 移动到 readOnly context
-    let readOnlyUpdate = {};
+    // 特殊处理：将关键数据移动到 readOnly context
+    let readOnlyUpdate: Record<string, unknown> = {};
+    
+    // 需求相关
     if (data.collectedData) {
-      readOnlyUpdate = { collectedDemand: data.collectedData };
+      readOnlyUpdate = { ...readOnlyUpdate, collectedDemand: data.collectedData };
     }
+    if (data.clarifiedData) {
+      readOnlyUpdate = { ...readOnlyUpdate, clarifiedDemand: data.clarifiedData };
+    }
+    
+    // 报告相关
     if (data.report) {
       readOnlyUpdate = { ...readOnlyUpdate, demandReport: data.report };
+    }
+    if (data.reportMarkdown) {
+      readOnlyUpdate = { ...readOnlyUpdate, demandReportMarkdown: data.reportMarkdown };
+    }
+    
+    // 任务相关
+    if (data.decomposition) {
+      readOnlyUpdate = { ...readOnlyUpdate, taskDecomposition: data.decomposition };
+    }
+    if (data.tasksMarkdown) {
+      readOnlyUpdate = { ...readOnlyUpdate, tasksMarkdown: data.tasksMarkdown };
+    }
+    
+    // 计划相关
+    if (data.plan) {
+      readOnlyUpdate = { ...readOnlyUpdate, executionPlan: data.plan };
+    }
+    if (data.planMarkdown) {
+      readOnlyUpdate = { ...readOnlyUpdate, planMarkdown: data.planMarkdown };
     }
     
     return {

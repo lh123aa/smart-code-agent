@@ -49,8 +49,8 @@ describe('SmartCodeAgent Integration', () => {
       
       expect(result).toBeDefined();
       expect(result.traceId).toBeDefined();
-      // 工作流执行可能返回 success 或 failed，取决于上下文
-      expect(['success', 'failed']).toContain(result.status);
+      // 工作流执行可能返回 success, partial（暂停等待用户输入）或 failed，取决于上下文
+      expect(['success', 'partial', 'failed']).toContain(result.status);
     });
 
     it('should start development flow with api type', async () => {

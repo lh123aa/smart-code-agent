@@ -5,7 +5,7 @@
 /**
  * Skill 类别
  */
-export type SkillCategory = 'ask' | 'search' | 'analyze' | 'generate' | 'format' | 'io' | 'observe' | 'utility';
+export type SkillCategory = 'ask' | 'search' | 'analyze' | 'generate' | 'format' | 'io' | 'observe' | 'utility' | 'workflow' | 'plan';
 
 /**
  * Skill 输入接口
@@ -173,7 +173,7 @@ export interface StageRecord {
   startTime: number;
   endTime: number;
   duration: number;
-  status: 'success' | 'failed' | 'retry';
+  status: 'success' | 'failed' | 'retry' | 'paused';
   skills: string[];
   metrics: Record<string, unknown>;
   error?: {
@@ -272,4 +272,26 @@ export interface UserFeedback {
   content: string;
   stage?: string;
   traceId?: string;
+}
+
+// ==================== 进度回调类型 ====================
+
+/**
+ * 进度回调参数
+ */
+export interface ProgressCallbackArgs {
+  /** 当前步骤名称 */
+  stepName: string | null;
+  /** 步骤索引 */
+  stepIndex: number;
+  /** 总步骤数 */
+  totalSteps: number;
+  /** 步骤状态 */
+  status: 'started' | 'success' | 'failed' | 'paused';
+  /** 步骤输出 */
+  output?: SkillOutput;
+  /** 执行消息 */
+  message?: string;
+  /** 时间戳 */
+  timestamp: number;
 }

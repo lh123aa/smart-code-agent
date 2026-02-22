@@ -161,6 +161,8 @@ export class SkillRegistry {
       io: 0,
       observe: 0,
       utility: 0,
+      workflow: 0,
+      plan: 0,
     };
 
     this.skills.forEach(instance => {
